@@ -2,6 +2,13 @@
 export MODULE_HOT_INSTALL_REQUEST="true"
 MODDIR="$MODPATH" . "$MODPATH/utils.sh"
 
+NOMOUNT_BIN=""
+if [ -x "/data/adb/modules/nomount/bin/nm" ]; then
+	NOMOUNT_BIN="/data/adb/modules/nomount/bin/nm"
+elif command -v nm >/dev/null 2>&1; then
+	NOMOUNT_BIN="$(command -v nm)"
+fi
+
 ui_print ""
 if [ -n "$MODULE_ARCH" ] && [ "$MODULE_ARCH" != "$ARCH" ]; then
 	abort "ERROR: Wrong arch
@@ -38,7 +45,23 @@ if BASEPATH=$(get_basepath); then
 		ui_print "* Detected $PKG_NAME as a system app"
 		SCNM="/data/adb/post-fs-data.d/$PKG_NAME-uninstall.sh"
 		mkdir -p /data/adb/post-fs-data.d
-		echo "mount -t tmpfs none $BASEPATH" >"$SCNM"
+		if [ -n "$NOMOUNT_BIN" ]; then
+			cat >"$SCNM" <<EOF
+NOMOUNT_BIN=""
+if [ -x "/data/adb/modules/nomount/bin/nm" ]; then
+	NOMOUNT_BIN="/data/adb/modules/nomount/bin/nm"
+elif command -v nm >/dev/null 2>&1; then
+	NOMOUNT_BIN="\$(command -v nm)"
+fi
+if [ -n "\$NOMOUNT_BIN" ]; then
+	\$NOMOUNT_BIN rule add --whiteout $BASEPATH
+else
+	mount -t tmpfs none $BASEPATH
+fi
+EOF
+		else
+			echo "mount -t tmpfs none $BASEPATH" >"$SCNM"
+		fi
 		chmod +x "$SCNM"
 		ui_print "* Created the uninstall script."
 		ui_print ""
@@ -150,9 +173,18 @@ ui_print "* Mounting $PKG_NAME"
 mkdir -p "/data/adb/rvhc"
 mv -f "$MODPATH/base.apk" "$RVPATH"
 
-if ! op=$(su -M -c mount -o bind "$RVPATH" "$BASEPATH/base.apk" 2>&1); then
-	ui_print "ERROR: Mount failed!"
-	ui_print "$op"
+if [ -n "$NOMOUNT_BIN" ]; then
+	if ! op=$(su -M -c "$NOMOUNT_BIN rule add \"$BASEPATH/base.apk\" \"$RVPATH\"" 2>&1); then
+		ui_print "ERROR: Mount failed!"
+		ui_print "$op"
+	else
+		echo "$BASEPATH/base.apk" >> "$MODPATH/.last_vpath"
+	fi
+else
+	if ! op=$(su -M -c mount -o bind "$RVPATH" "$BASEPATH/base.apk" 2>&1); then
+		ui_print "ERROR: Mount failed!"
+		ui_print "$op"
+	fi
 fi
 am force-stop "$PKG_NAME"
 
