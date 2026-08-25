@@ -3,6 +3,13 @@
 RVPATH=/data/adb/rvhc/${MODDIR##*/}.apk
 . "$MODDIR/config"
 
+NOMOUNT_BIN=""
+if [ -x "/data/adb/modules/nomount/bin/nm" ]; then
+	NOMOUNT_BIN="/data/adb/modules/nomount/bin/nm"
+elif command -v nm >/dev/null 2>&1; then
+	NOMOUNT_BIN="$(command -v nm)"
+fi
+
 ch_desc() {
 	sed -i "s|^description=.*|description=${1}|" "$MODDIR/module.prop"
 }
@@ -33,10 +40,22 @@ get_basepath() {
 }
 
 umount_all() {
-	su -M -c grep -F "$PKG_NAME" /proc/mounts | while read -r line; do
-		mp=${line#* } mp=${mp%% *} mp=${mp%%\\*}
-		su -M -c umount -l "${mp}"
-	done
+	if [ -n "$NOMOUNT_BIN" ]; then
+		if [ -f "$MODDIR/.last_vpath" ]; then
+			while IFS= read -r vp; do
+				[ -n "$vp" ] && su -M -c "$NOMOUNT_BIN rule del \"$vp\""
+			done < "$MODDIR/.last_vpath"
+			rm -f "$MODDIR/.last_vpath"
+		fi
+		BASEPATH_NOW=$(pmex path "$PKG_NAME" 2>/dev/null)
+		BASEPATH_NOW=${BASEPATH_NOW##*:} BASEPATH_NOW=${BASEPATH_NOW%/*}
+		[ -n "$BASEPATH_NOW" ] && su -M -c "$NOMOUNT_BIN rule del \"$BASEPATH_NOW/base.apk\""
+	else
+		su -M -c grep -F "$PKG_NAME" /proc/mounts | while read -r line; do
+			mp=${line#* } mp=${mp%% *} mp=${mp%%\\*}
+			su -M -c umount -l "${mp}"
+		done
+	fi
 	am force-stop "$PKG_NAME" || :
 }
 
@@ -59,7 +78,13 @@ mount_rv() {
 		ch_desc_err "Error chcon: '$OP'"
 		return 1
 	fi
-	mount -o bind "$RVPATH" "${1}/base.apk"
+	if [ -n "$NOMOUNT_BIN" ]; then
+		if su -M -c "$NOMOUNT_BIN rule add \"${1}/base.apk\" \"$RVPATH\"" >/dev/null 2>&1; then
+			echo "${1}/base.apk" >> "$MODDIR/.last_vpath"
+		fi
+	else
+		mount -o bind "$RVPATH" "${1}/base.apk"
+	fi
 	am force-stop "$PKG_NAME"
 	cp -f "$MODDIR/module.prop.orig" "$MODDIR/module.prop"
 	return 0
