@@ -19,12 +19,54 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Rebase from upstream
+        id: rebase
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          PAT_TOKEN: ${{ secrets.REBASE_PAT }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Push using the PAT (allows force-push to protected main and lets the
+          # rebase land commits that modify .github/workflows/*.yml, which the
+          # default GITHUB_TOKEN is not permitted to do).
+          git remote set-url origin "https://x-access-token:${PAT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          git remote add upstream https://github.com/j-hc/revanced-magisk-module.git 2>/dev/null || true
+          git fetch upstream
+
+          OLD_HEAD=$(git rev-parse HEAD)
+
+          if ! git rebase upstream/main; then
+            echo "::warning::Rebase from upstream conflicted. Aborting and failing the run so you can merge manually."
+            git rebase --abort
+            exit 1
+          fi
+
+          NEW_HEAD=$(git rev-parse HEAD)
+          if [ "$OLD_HEAD" = "$NEW_HEAD" ]; then
+            echo "No upstream changes since last run."
+            echo "rebased=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "Upstream advanced ($OLD_HEAD -> $NEW_HEAD). Force-pushing to origin/main."
+            git push --force-with-lease origin HEAD:main
+            echo "rebased=1" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Should build?
         id: should_build
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if [ "${{ steps.rebase.outputs.rebased }}" = "1" ]; then
+            echo "Upstream rebased — forcing build."
+            echo "SHOULD_BUILD=1" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           if ! git checkout origin/update build.md; then
             echo "first time building!"
             echo "SHOULD_BUILD=1" >> $GITHUB_OUTPUT
