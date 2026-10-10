@@ -99,7 +99,7 @@ install() {
 					mkdir -p /data/adb/rvhc/empty /data/adb/post-fs-data.d
 					chcon u:object_r:system_file:s0 /data/adb/rvhc/empty
 					P="/data/adb/post-fs-data.d/$PKG_NAME-uninstall.sh"
-					echo "mount -o bind /data/adb/rvhc/empty ${BASEPATH}" >"$P"
+					gen_debloat_script "$P" "${BASEPATH}"
 					chmod +x "$P"
 
 					ui_print "* Created the uninstall script."
@@ -166,9 +166,18 @@ ui_print "* Mounting $PKG_NAME"
 mkdir -p "/data/adb/rvhc"
 mv -f "$MODPATH/base.apk" "$RVPATH"
 
-if ! op=$(su -M -c mount -o bind "$RVPATH" "$BASEPATH/base.apk" 2>&1); then
-	ui_print "ERROR: Mount failed!"
-	ui_print "$op"
+if [ -n "$NOMOUNT_BIN" ]; then
+	if ! op=$(su -M -c "$NOMOUNT_BIN rule add \"$BASEPATH/base.apk\" \"$RVPATH\"" 2>&1); then
+		ui_print "ERROR: Mount failed!"
+		ui_print "$op"
+	else
+		echo "$BASEPATH/base.apk" >> "$MODPATH/.last_vpath"
+	fi
+else
+	if ! op=$(su -M -c mount -o bind "$RVPATH" "$BASEPATH/base.apk" 2>&1); then
+		ui_print "ERROR: Mount failed!"
+		ui_print "$op"
+	fi
 fi
 am force-stop "$PKG_NAME"
 
