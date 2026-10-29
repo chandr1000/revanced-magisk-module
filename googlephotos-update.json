@@ -1,6 +1,6 @@
 {
-  "version": "v7.92.0.977185651 (patches 1.6.1.mpp)",
-  "versionCode": 13,
-  "zipUrl": "https://github.com/chandr1000/revanced-magisk-module/releases/download/13/googlephotos-devanced-module-v7.92.0.977185651-all.zip",
+  "version": "v7.92.0.977185651 (patches 1.6.2.mpp)",
+  "versionCode": 14,
+  "zipUrl": "https://github.com/chandr1000/revanced-magisk-module/releases/download/14/googlephotos-devanced-module-v7.92.0.977185651-all.zip",
   "changelog": "https://raw.githubusercontent.com/chandr1000/revanced-magisk-module/update/build.md"
 }
